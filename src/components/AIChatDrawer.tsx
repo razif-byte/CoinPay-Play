@@ -28,10 +28,10 @@ export const AIChatDrawer: React.FC<AIChatDrawerProps> = ({ isDark }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const quickPrompts = [
-    'Cara Top Up CIMB 7016657934?',
-    'Bagaimana dapatkan Reward Coin?',
-    'Apakah jenis 30 permainan slot?',
-    'Cara pindah baki e-wallet?',
+    'Cara Top Up CIMB 7016657934 / TNG?',
+    'Integrasi API Google Pay, ShopeePay, GrabPay?',
+    'Koleksi 30 Slot Casino Mega888?',
+    'Bagaimana dapatkan Reward Coin & Baucar?',
   ];
 
   const scrollToBottom = () => {

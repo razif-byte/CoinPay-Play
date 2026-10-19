@@ -6,12 +6,15 @@ import { AuthModal } from './components/auth/AuthModal';
 import { AIChatDrawer } from './components/AIChatDrawer';
 import { WalletHomeView } from './components/wallet/WalletHomeView';
 import { TopUpView } from './components/wallet/TopUpView';
-import { ArcadeSlotCollection } from './components/games/ArcadeSlotCollection';
 import { SnowPlow3DGame } from './components/games/SnowPlow3DGame';
+import { SniperOps3DGame } from './components/games/SniperOps3DGame';
+import { ArcadeSlotCollection } from './components/games/ArcadeSlotCollection';
 import { CandyPopGame } from './components/games/CandyPopGame';
 import { BlockDropGame } from './components/games/BlockDropGame';
 import { CyberTennisGame } from './components/games/CyberTennisGame';
 import { PianoTapGame } from './components/games/PianoTapGame';
+import { LiveStreamView } from './components/live/LiveStreamView';
+import { DramaMovieView } from './components/drama/DramaMovieView';
 import { RewardsCenterView } from './components/rewards/RewardsCenterView';
 import { AdminDashboardView } from './components/admin/AdminDashboardView';
 import { UserProfile, LedgerEntry, TopupRequest, Mission, Voucher } from './types';
@@ -32,15 +35,19 @@ import {
   CheckCircle,
   Download,
   Coins,
+  Tv,
+  Film,
+  Target,
+  Radio,
 } from 'lucide-react';
 
 export default function App() {
   const [isDark, setIsDark] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<
-    'home' | 'wallet' | 'topup' | 'games' | 'rewards' | 'profile' | 'admin'
+    'home' | 'wallet' | 'topup' | 'games' | 'live' | 'drama' | 'rewards' | 'profile' | 'admin'
   >('home');
   const [activeGameCategory, setActiveGameCategory] = useState<
-    'snowplow' | 'slots' | 'candypop' | 'blockdrop' | 'tennis' | 'piano'
+    'snowplow' | 'sniper' | 'slots' | 'candypop' | 'blockdrop' | 'tennis' | 'piano'
   >('snowplow');
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -279,6 +286,48 @@ export default function App() {
     setTopupRequests((prev) => [newReq, ...prev]);
   };
 
+  // Instant API Payment Credit (Google Pay, ShopeePay, GrabPay, DuitNow QR, TNG)
+  const handleInstantApiCredit = (amountMYR: number, gatewayName: string, refNumber: string) => {
+    const creditCents = Math.round(amountMYR * 100);
+    setUser((u) => ({ ...u, cashBalanceCents: u.cashBalanceCents + creditCents }));
+
+    const newEntry: LedgerEntry = {
+      id: `TXN-${Date.now().toString().slice(-4)}`,
+      userId: user.id,
+      type: 'TOPUP',
+      amountCents: creditCents,
+      feeCents: 0,
+      status: 'APPROVED',
+      timestamp: new Date().toLocaleString('ms-MY'),
+      refNumber,
+      title: `Tambah Nilai API (${gatewayName})`,
+      description: `Transaksi disahkan serta-merta melalui ${gatewayName} API gateway.`,
+      bankAccount: gatewayName.includes('TNG') ? 'TNG: 170997196374' : 'CIMB: 7016657934',
+    };
+    setLedger((prev) => [newEntry, ...prev]);
+
+    const newReq: TopupRequest = {
+      id: `topup_api_${Date.now()}`,
+      userId: user.id,
+      userName: user.name,
+      amountMYR,
+      bankName: gatewayName.includes('TNG') ? 'TNG DuitNow' : 'CIMB Bank',
+      accountNumber: gatewayName.includes('TNG') ? '170997196374' : '7016657934',
+      refNumber,
+      status: 'APPROVED',
+      createdAt: new Date().toLocaleString('ms-MY', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      reviewedBy: `${gatewayName} API Settlement`,
+      reviewedAt: new Date().toLocaleTimeString('ms-MY'),
+    };
+    setTopupRequests((prev) => [newReq, ...prev]);
+  };
+
   // Admin approves Topup -> atomically credits cash balance and writes to ledger
   const handleApproveTopup = (reqId: string, auditNote: string) => {
     const target = topupRequests.find((t) => t.id === reqId);
@@ -376,6 +425,25 @@ export default function App() {
     setVouchers((prev) =>
       prev.map((item) => (item.id === voucherId ? { ...item, claimed: true } : item))
     );
+  };
+
+  // Send Live Stream Tip
+  const handleSendLiveTip = (amountCents: number, giftName: string) => {
+    setUser((u) => ({ ...u, cashBalanceCents: u.cashBalanceCents - amountCents }));
+    const newEntry: LedgerEntry = {
+      id: `TXN-${Date.now().toString().slice(-4)}`,
+      userId: user.id,
+      type: 'SCAN_PAY',
+      amountCents,
+      feeCents: 0,
+      status: 'APPROVED',
+      timestamp: new Date().toLocaleString('ms-MY'),
+      refNumber: `LIVE-${Date.now().toString().slice(-8)}`,
+      title: `Hadiah Tip Siaran Langsung (${giftName})`,
+      description: `Tip saweria dihantar di saluran CoinPay Live TV.`,
+      recipient: 'Penyiar Rasmi Live TV3 & Arena',
+    };
+    setLedger((prev) => [newEntry, ...prev]);
   };
 
   return (
@@ -525,6 +593,24 @@ export default function App() {
             Game Center
           </button>
           <button
+            onClick={() => setActiveTab('live')}
+            className={`px-4 py-2 rounded-xl transition flex items-center gap-1.5 ${
+              activeTab === 'live' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span>Live TV</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('drama')}
+            className={`px-4 py-2 rounded-xl transition flex items-center gap-1.5 ${
+              activeTab === 'drama' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Film className="w-3.5 h-3.5 text-purple-400" />
+            <span>Drama & Filem</span>
+          </button>
+          <button
             onClick={() => setActiveTab('rewards')}
             className={`px-4 py-2 rounded-xl transition ${
               activeTab === 'rewards' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
@@ -576,6 +662,7 @@ export default function App() {
           <TopUpView
             topupRequests={topupRequests}
             onSubmitTopup={handleSubmitTopup}
+            onInstantApiCredit={handleInstantApiCredit}
             isDark={isDark}
           />
         )}
@@ -597,7 +684,22 @@ export default function App() {
                 }`}
               >
                 <Zap className="w-4 h-4 text-amber-400" />
-                <span>3D Snow Plow (Flagship Three.js)</span>
+                <span>3D Snow Plow</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  sounds.playClick();
+                  setActiveGameCategory('sniper');
+                }}
+                className={`px-3.5 py-2 rounded-xl whitespace-nowrap transition flex items-center gap-1.5 ${
+                  activeGameCategory === 'sniper'
+                    ? 'bg-red-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Target className="w-4 h-4 text-red-400" />
+                <span>🎯 Special Ops Sniper 3D</span>
               </button>
 
               <button
@@ -612,7 +714,7 @@ export default function App() {
                 }`}
               >
                 <Sparkles className="w-4 h-4 text-yellow-400" />
-                <span>30 Permainan Slot Arked</span>
+                <span>30 Slot Mega888</span>
               </button>
 
               <button
@@ -626,7 +728,7 @@ export default function App() {
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
-                <span>🍬 Candy Pop (Match-3)</span>
+                <span>🍬 Candy Pop</span>
               </button>
 
               <button
@@ -640,7 +742,7 @@ export default function App() {
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
-                <span>🧱 Block Drop (Tetris)</span>
+                <span>🧱 Block Drop</span>
               </button>
 
               <button
@@ -668,13 +770,16 @@ export default function App() {
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
                 }`}
               >
-                <span>🎹 Piano Rhythm Tap</span>
+                <span>🎹 Piano Tap</span>
               </button>
             </div>
 
             {/* Active Game Component */}
             {activeGameCategory === 'snowplow' && (
               <SnowPlow3DGame onEarnCoins={handleEarnCoins} isDark={isDark} />
+            )}
+            {activeGameCategory === 'sniper' && (
+              <SniperOps3DGame onEarnCoins={handleEarnCoins} isDark={isDark} />
             )}
             {activeGameCategory === 'slots' && (
               <ArcadeSlotCollection onEarnCoins={handleEarnCoins} isDark={isDark} />
@@ -694,7 +799,22 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 5: Rewards */}
+        {/* TAB 5: Live Streaming & TV3 */}
+        {activeTab === 'live' && (
+          <LiveStreamView
+            userCashCents={user.cashBalanceCents}
+            userRewardCoins={user.rewardCoins}
+            onSendTip={handleSendLiveTip}
+            isDark={isDark}
+          />
+        )}
+
+        {/* TAB 6: Drama & Filem Melayu/Korea/China */}
+        {activeTab === 'drama' && (
+          <DramaMovieView isDark={isDark} />
+        )}
+
+        {/* TAB 7: Rewards */}
         {activeTab === 'rewards' && (
           <RewardsCenterView
             user={user}
@@ -896,6 +1016,32 @@ export default function App() {
         >
           <Gamepad2 className="w-5 h-5" />
           <span className="text-[10px]">Games</span>
+        </button>
+
+        <button
+          onClick={() => {
+            sounds.playClick();
+            setActiveTab('live');
+          }}
+          className={`flex flex-col items-center gap-1 p-1.5 flex-1 ${
+            activeTab === 'live' ? 'text-blue-500 font-bold' : 'hover:text-slate-200'
+          }`}
+        >
+          <Radio className="w-5 h-5 text-red-500 animate-pulse" />
+          <span className="text-[10px]">Live</span>
+        </button>
+
+        <button
+          onClick={() => {
+            sounds.playClick();
+            setActiveTab('drama');
+          }}
+          className={`flex flex-col items-center gap-1 p-1.5 flex-1 ${
+            activeTab === 'drama' ? 'text-blue-500 font-bold' : 'hover:text-slate-200'
+          }`}
+        >
+          <Film className="w-5 h-5 text-purple-400" />
+          <span className="text-[10px]">Drama</span>
         </button>
 
         <button

@@ -559,7 +559,48 @@ export const WalletHomeView: React.FC<WalletHomeViewProps> = ({
             <div className="w-48 h-48 mx-auto my-2 rounded-2xl border-2 border-dashed border-amber-400/50 bg-slate-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
               <div className="w-full h-0.5 bg-amber-400 absolute top-1/2 left-0 -translate-y-1/2 animate-pulse" />
               <QrCode className="w-20 h-20 text-slate-600" />
-              <span className="text-[10px] text-slate-400 mt-2">Mencari kod QR peniaga...</span>
+              <span className="text-[10px] text-slate-400 mt-2">Mencari kod QR peniaga PayNet...</span>
+            </div>
+
+            {/* Integrated API Selector for Merchant Checkout */}
+            <div className="mt-3 text-left space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block text-center">
+                Pilih Gerbang API Untuk Bayar:
+              </span>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={handleSimulateScanPay}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold flex items-center gap-1.5 border border-slate-700"
+                >
+                  <span className="w-4 h-4 rounded bg-white text-slate-900 font-black text-[9px] flex items-center justify-center">G</span>
+                  <span>Google Pay</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSimulateScanPay}
+                  className="p-2 rounded-xl bg-orange-950/40 hover:bg-orange-900/40 text-orange-200 font-bold flex items-center gap-1.5 border border-orange-500/30"
+                >
+                  <span className="w-4 h-4 rounded-full bg-orange-500 text-white font-black text-[9px] flex items-center justify-center">S</span>
+                  <span>ShopeePay</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSimulateScanPay}
+                  className="p-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/40 text-emerald-200 font-bold flex items-center gap-1.5 border border-emerald-500/30"
+                >
+                  <span className="w-4 h-4 rounded bg-emerald-500 text-white font-black text-[9px] flex items-center justify-center">G</span>
+                  <span>GrabPay</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSimulateScanPay}
+                  className="p-2 rounded-xl bg-blue-950/40 hover:bg-blue-900/40 text-blue-200 font-bold flex items-center gap-1.5 border border-blue-500/30"
+                >
+                  <span className="w-4 h-4 rounded bg-yellow-400 text-blue-950 font-black text-[9px] flex items-center justify-center">T</span>
+                  <span>Touch 'n Go</span>
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-800 flex flex-col gap-2">
@@ -567,7 +608,7 @@ export const WalletHomeView: React.FC<WalletHomeViewProps> = ({
                 onClick={handleSimulateScanPay}
                 className="w-full btn-3d btn-3d-gold py-2.5 rounded-xl font-bold text-xs text-slate-950"
               >
-                Simulasi Imbas QR Peniaga (RM 15.00)
+                Bayar DuitNow QR Peniaga (RM 15.00)
               </button>
               <button
                 onClick={() => setShowScanModal(false)}

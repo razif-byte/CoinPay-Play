@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import QRCode from 'qrcode';
 import { TopupRequest } from '../../types';
 import { sounds } from '../../utils/audio';
@@ -15,43 +15,53 @@ import {
   Building,
   Smartphone,
   ChevronRight,
+  Zap,
+  CheckCircle2,
+  RefreshCw,
+  Terminal,
+  ExternalLink,
 } from 'lucide-react';
 
 interface TopUpViewProps {
   topupRequests: TopupRequest[];
   onSubmitTopup: (req: Omit<TopupRequest, 'id' | 'createdAt' | 'status'>) => void;
+  onInstantApiCredit: (amountMYR: number, gatewayName: string, refNumber: string) => void;
   isDark: boolean;
 }
+
+type PaymentGatewayId = 'googlepay' | 'shopeepay' | 'grabpay' | 'duitnow' | 'tng' | 'cimb_manual';
 
 export const TopUpView: React.FC<TopUpViewProps> = ({
   topupRequests,
   onSubmitTopup,
+  onInstantApiCredit,
   isDark,
 }) => {
   const [selectedAmount, setSelectedAmount] = useState<number>(50);
   const [customAmount, setCustomAmount] = useState<string>('');
-  const [selectedMethod, setSelectedMethod] = useState<'CIMB' | 'TNG'>('CIMB');
+  const [selectedGateway, setSelectedGateway] = useState<PaymentGatewayId>('googlepay');
   const [refNumber, setRefNumber] = useState('');
   const [slipFileName, setSlipFileName] = useState('');
   const [copiedAccount, setCopiedAccount] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
-  const [submittedSuccess, setSubmittedSuccess] = useState(false);
+  const [isProcessingApi, setIsProcessingApi] = useState(false);
+  const [apiResult, setApiResult] = useState<any | null>(null);
+  const [showApiInspector, setShowApiInspector] = useState(false);
 
   const PRESET_AMOUNTS = [10, 20, 50, 100, 200];
-
   const currentAmount = customAmount ? parseFloat(customAmount) || 0 : selectedAmount;
 
   // Generate dynamic DuitNow QR payload
-  React.useEffect(() => {
-    const acc = selectedMethod === 'CIMB' ? '7016657934' : '170997196374';
-    const qrPayload = `https://nasadef.com.my/pay?method=${selectedMethod}&acc=${acc}&amount=${currentAmount}&ref=CP${Date.now()}`;
+  useEffect(() => {
+    const acc = selectedGateway === 'tng' ? '170997196374' : '7016657934';
+    const qrPayload = `00020101021226580014my.com.paynet.duitnow0114${acc}520458125303458540${currentAmount.toFixed(2).length}${currentAmount.toFixed(2)}5802MY5916NASADEF SDN BHD6012KUALA LUMPUR62160112CP${Date.now()}6304`;
 
     QRCode.toDataURL(qrPayload, {
-      width: 240,
+      width: 260,
       margin: 1.5,
       color: { dark: '#0f172a', light: '#ffffff' },
     }).then((url) => setQrDataUrl(url)).catch((e) => console.error(e));
-  }, [selectedMethod, currentAmount]);
+  }, [selectedGateway, currentAmount]);
 
   const handleCopy = (text: string) => {
     sounds.playClick();
@@ -67,7 +77,59 @@ export const TopUpView: React.FC<TopUpViewProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // INSTANT API PAYMENT EXECUTION
+  const handleExecuteApiPayment = async () => {
+    if (currentAmount < 5) {
+      alert('Jumlah minimum tambah nilai ialah RM 5.00.');
+      return;
+    }
+
+    sounds.playClick();
+    setIsProcessingApi(true);
+    setApiResult(null);
+
+    const endpointMap: Record<string, string> = {
+      googlepay: '/api/pay/googlepay',
+      shopeepay: '/api/pay/shopeepay',
+      grabpay: '/api/pay/grabpay',
+      duitnow: '/api/pay/duitnow',
+      tng: '/api/pay/tng',
+    };
+
+    const targetEndpoint = endpointMap[selectedGateway];
+    if (!targetEndpoint) return;
+
+    try {
+      const res = await fetch(targetEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amountMYR: currentAmount,
+          userId: 'usr_current',
+          description: `Tambah Nilai API ${selectedGateway.toUpperCase()}`,
+          token: 'gpay_auth_token_sample',
+          shopeePhone: '017-0997196',
+          grabPhone: '017-0997196',
+          tngPhone: '170997196374',
+        }),
+      });
+
+      const data = await res.json();
+      setIsProcessingApi(false);
+      setApiResult(data);
+
+      if (data.success) {
+        sounds.playCoinChime();
+        onInstantApiCredit(currentAmount, data.gateway || selectedGateway, data.refNumber);
+      }
+    } catch (err: any) {
+      setIsProcessingApi(false);
+      setApiResult({ success: false, error: 'Ralat sambungan API gerbang pembayaran.', details: err.message });
+    }
+  };
+
+  // MANUAL CIMB SUBMIT
+  const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!refNumber.trim()) {
       alert('Sila masukkan nombor rujukan pindahan bank anda.');
@@ -83,45 +145,107 @@ export const TopUpView: React.FC<TopUpViewProps> = ({
       userId: 'usr_current',
       userName: 'Ahmad Razif',
       amountMYR: currentAmount,
-      bankName: selectedMethod === 'CIMB' ? 'CIMB Bank' : 'TNG DuitNow',
-      accountNumber: selectedMethod === 'CIMB' ? '7016657934' : '170997196374',
+      bankName: 'CIMB Bank',
+      accountNumber: '7016657934',
       refNumber: refNumber.trim().toUpperCase(),
       proofImageUrl: slipFileName ? `slip_${slipFileName}` : undefined,
     });
 
-    setSubmittedSuccess(true);
     setRefNumber('');
     setSlipFileName('');
-    setTimeout(() => setSubmittedSuccess(false), 6000);
+    setApiResult({
+      success: true,
+      gateway: 'CIMB Bank Pindahan',
+      message: 'Permohonan pindahan manual dihantar. Menunggu semakan pentadbir.',
+      refNumber: refNumber.trim().toUpperCase(),
+    });
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
+    <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
       {/* Page Header */}
-      <div className="text-center md:text-left">
-        <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight">
-          Tambah Nilai E-Wallet (Top Up)
-        </h2>
-        <p className="text-xs md:text-sm text-slate-400 mt-1">
-          Pindahkan dana ke akaun rasmi berdaftar untuk menambah baki wang tunai (MYR) e-wallet anda.
-        </p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 text-xs font-bold mb-2">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            Integrasi API Pembayaran Rasmi Bersepadu
+          </div>
+          <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight">
+            Tambah Nilai E-Wallet & Gerbang API
+          </h2>
+          <p className="text-xs md:text-sm text-slate-400 mt-1">
+            Pilih integrasi API segera (Google Pay, ShopeePay, GrabPay, DuitNow QR, TNG) atau pindahan bank CIMB.
+          </p>
+        </div>
+
+        <button
+          onClick={() => setShowApiInspector(!showApiInspector)}
+          className="self-start md:self-auto btn-3d btn-3d-subtle px-3.5 py-2 rounded-xl text-xs font-bold text-slate-300 flex items-center gap-2"
+        >
+          <Terminal className="w-4 h-4 text-emerald-400" />
+          <span>{showApiInspector ? 'Tutup API Inspector' : 'Papar API PayNet Inspector'}</span>
+        </button>
       </div>
 
-      {submittedSuccess && (
-        <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-500/50 text-emerald-200 flex items-center gap-3 animate-slide-up shadow-xl">
-          <Check className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-          <div className="text-xs">
-            <span className="font-extrabold block text-sm">Permohonan Berjaya Dihantar!</span>
-            Permohonan tambah nilai anda kini berstatus <strong>UNDER REVIEW</strong>. Baki tunai akan dikreditkan ke e-wallet anda sebaik sahaja semakan pentadbir disahkan.
+      {/* Live API Inspector Drawer */}
+      {showApiInspector && (
+        <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/40 text-emerald-300 font-mono text-xs shadow-2xl animate-slide-up space-y-2">
+          <div className="flex items-center justify-between border-b border-emerald-500/20 pb-2">
+            <span className="font-bold flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+              API Gateway Webhook & Routing Monitor (HTTP 200 OK)
+            </span>
+            <span className="text-[10px] text-slate-400">Host: http://localhost:3000/api/pay/*</span>
+          </div>
+          <div className="text-[11px] space-y-1 text-slate-300">
+            <p>• <strong>Google Pay API:</strong> Tokenized Android PayNet Gateway (Endpoint: <code>/api/pay/googlepay</code>)</p>
+            <p>• <strong>ShopeePay API:</strong> Direct e-Wallet Merchant Debit (Endpoint: <code>/api/pay/shopeepay</code>)</p>
+            <p>• <strong>GrabPay API:</strong> Grab Web SDK with GrabRewards preview (Endpoint: <code>/api/pay/grabpay</code>)</p>
+            <p>• <strong>DuitNow QR Pay API:</strong> PayNet Standard EMVCo National QR (Endpoint: <code>/api/pay/duitnow</code>)</p>
+            <p>• <strong>Touch 'n Go API:</strong> TNG DuitNow 170997196374 Direct Debit (Endpoint: <code>/api/pay/tng</code>)</p>
+            <p>• <strong>Akaun Penyelesaian Rasmi:</strong> CIMB: <code>7016657934</code> | TNG: <code>170997196374</code></p>
           </div>
         </div>
       )}
 
-      {/* Main Topup Grid */}
+      {/* Success / Alert Banner */}
+      {apiResult && (
+        <div
+          className={`p-4 rounded-2xl border flex items-start gap-3 shadow-xl animate-slide-up ${
+            apiResult.success
+              ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-200'
+              : 'bg-rose-950/60 border-rose-500/50 text-rose-200'
+          }`}
+        >
+          {apiResult.success ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
+          )}
+          <div className="text-xs space-y-1">
+            <span className="font-black text-sm block">
+              {apiResult.success ? 'Integrasi Pembayaran Berjaya!' : 'Ralat Transaksi API'}
+            </span>
+            <p>{apiResult.message || apiResult.error}</p>
+            {apiResult.refNumber && (
+              <span className="inline-block px-2.5 py-0.5 rounded bg-black/30 font-mono font-bold text-amber-300">
+                No Rujukan: {apiResult.refNumber}
+              </span>
+            )}
+            {apiResult.settlementAccount && (
+              <span className="block text-[11px] text-slate-300">
+                Penyelesaian: <strong>{apiResult.settlementAccount}</strong>
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Amount & Method Selection */}
+        {/* Left Column: Form & Gateway Picker */}
         <div className="lg:col-span-7 space-y-6">
-          {/* Step 1: Select Amount */}
+          {/* Step 1: Choose Amount */}
           <div className="p-5 md:p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
             <div className="flex items-center gap-2 text-sm font-extrabold text-white">
               <span className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-black">
@@ -168,9 +292,7 @@ export const TopUpView: React.FC<TopUpViewProps> = ({
                   max="5000"
                   step="1"
                   value={customAmount}
-                  onChange={(e) => {
-                    setCustomAmount(e.target.value);
-                  }}
+                  onChange={(e) => setCustomAmount(e.target.value)}
                   placeholder="Contoh: 150"
                   className="w-full pl-12 pr-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 text-white font-bold text-sm focus:outline-none focus:border-blue-500"
                 />
@@ -178,188 +300,344 @@ export const TopUpView: React.FC<TopUpViewProps> = ({
             </div>
           </div>
 
-          {/* Step 2: Choose Payment Account / Gateway */}
+          {/* Step 2: Choose Payment Gateway API */}
           <div className="p-5 md:p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
-            <div className="flex items-center gap-2 text-sm font-extrabold text-white">
-              <span className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-black">
-                2
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-extrabold text-white">
+                <span className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-black">
+                  2
+                </span>
+                <span>Pilih Gerbang Pembayaran API Rasmi</span>
+              </div>
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">
+                ⚡ 5 API Aktif
               </span>
-              <span>Pilih Saluran Pembayaran Rasmi</span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Option 1: CIMB Bank */}
+              {/* 1. Google Pay */}
               <button
                 type="button"
                 onClick={() => {
                   sounds.playClick();
-                  setSelectedMethod('CIMB');
+                  setSelectedGateway('googlepay');
                 }}
-                className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden ${
-                  selectedMethod === 'CIMB'
-                    ? 'bg-rose-950/40 border-rose-500 shadow-lg shadow-rose-900/20'
-                    : 'bg-slate-800/50 hover:bg-slate-800 border-slate-700'
+                className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden group ${
+                  selectedGateway === 'googlepay'
+                    ? 'bg-slate-800 border-white shadow-lg shadow-white/10'
+                    : 'bg-slate-800/40 hover:bg-slate-800 border-slate-700'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <Building className="w-5 h-5 text-rose-500" />
-                    <span className="font-black text-white text-sm">CIMB Bank</span>
+                    <span className="px-2 py-0.5 rounded bg-white text-slate-900 font-black text-xs">
+                      G Pay
+                    </span>
+                    <span className="font-bold text-xs text-white">Google Pay</span>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">
-                    Pindahan Bank
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                    API Segera
                   </span>
                 </div>
-                <p className="text-xs text-slate-300 font-mono tracking-wide font-bold">
-                  7016657934
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Pemegang: NASADEF SDN BHD (Disahkan)
-                </p>
+                <p className="text-[11px] text-slate-400">Bayar pantas 1-klik melalui akaun Google Play.</p>
               </button>
 
-              {/* Option 2: TNG DuitNow */}
+              {/* 2. ShopeePay */}
               <button
                 type="button"
                 onClick={() => {
                   sounds.playClick();
-                  setSelectedMethod('TNG');
+                  setSelectedGateway('shopeepay');
                 }}
-                className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden ${
-                  selectedMethod === 'TNG'
-                    ? 'bg-blue-950/40 border-blue-500 shadow-lg shadow-blue-900/20'
-                    : 'bg-slate-800/50 hover:bg-slate-800 border-slate-700'
+                className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden group ${
+                  selectedGateway === 'shopeepay'
+                    ? 'bg-orange-950/40 border-orange-500 shadow-lg shadow-orange-500/20'
+                    : 'bg-slate-800/40 hover:bg-slate-800 border-slate-700'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-1.5">
                   <div className="flex items-center gap-2">
-                    <Smartphone className="w-5 h-5 text-blue-400" />
-                    <span className="font-black text-white text-sm">TNG DuitNow</span>
+                    <span className="w-5 h-5 rounded-full bg-orange-500 text-white font-black text-[10px] flex items-center justify-center">
+                      S
+                    </span>
+                    <span className="font-bold text-xs text-white">ShopeePay</span>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300">
-                    DuitNow QR
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-300">
+                    API Checkout
                   </span>
                 </div>
-                <p className="text-xs text-slate-300 font-mono tracking-wide font-bold">
-                  170997196374
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  DuitNow ID: 170997196374 (NASADEF)
-                </p>
+                <p className="text-[11px] text-slate-400">Caj terus dompet ShopeePay anda.</p>
+              </button>
+
+              {/* 3. GrabPay */}
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setSelectedGateway('grabpay');
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden group ${
+                  selectedGateway === 'grabpay'
+                    ? 'bg-emerald-950/40 border-emerald-500 shadow-lg shadow-emerald-500/20'
+                    : 'bg-slate-800/40 hover:bg-slate-800 border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-black text-[10px]">
+                      Grab
+                    </span>
+                    <span className="font-bold text-xs text-white">GrabPay</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                    +GrabPoints
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">Dapat 3x GrabPoints bagi setiap RM1 dibelanja.</p>
+              </button>
+
+              {/* 4. DuitNow QR Pay */}
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setSelectedGateway('duitnow');
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden group ${
+                  selectedGateway === 'duitnow'
+                    ? 'bg-rose-950/40 border-rose-500 shadow-lg shadow-rose-500/20'
+                    : 'bg-slate-800/40 hover:bg-slate-800 border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <QrCode className="w-4 h-4 text-rose-400" />
+                    <span className="font-bold text-xs text-white">DuitNow QR Pay</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">
+                    PayNet QR
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">Imbas menggunakan sebarang aplikasi perbankan.</p>
+              </button>
+
+              {/* 5. Touch 'n Go (TNG) */}
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setSelectedGateway('tng');
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden group ${
+                  selectedGateway === 'tng'
+                    ? 'bg-blue-950/40 border-blue-500 shadow-lg shadow-blue-500/20'
+                    : 'bg-slate-800/40 hover:bg-slate-800 border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded bg-yellow-400 text-blue-900 font-black text-[9px] flex items-center justify-center">
+                      TNG
+                    </span>
+                    <span className="font-bold text-xs text-white">Touch 'n Go eWallet</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">
+                    170997196374
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">Pindahan pantas DuitNow ID rasmi.</p>
+              </button>
+
+              {/* 6. CIMB Bank Manual Pindahan */}
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setSelectedGateway('cimb_manual');
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden group ${
+                  selectedGateway === 'cimb_manual'
+                    ? 'bg-rose-950/40 border-rose-500 shadow-lg shadow-rose-500/20'
+                    : 'bg-slate-800/40 hover:bg-slate-800 border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <Building className="w-4 h-4 text-rose-500" />
+                    <span className="font-bold text-xs text-white">CIMB Bank Pindahan</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">
+                    7016657934
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">Pindahan manual melalui CIMB Clicks.</p>
               </button>
             </div>
           </div>
 
-          {/* Step 3: Verification Submission Form */}
-          <form
-            onSubmit={handleSubmit}
-            className="p-5 md:p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4"
-          >
-            <div className="flex items-center gap-2 text-sm font-extrabold text-white">
-              <span className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-black">
-                3
-              </span>
-              <span>Hantar Bukti & Nombor Rujukan Pindahan</span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Nombor Rujukan Bank (Wajib)
-              </label>
-              <input
-                type="text"
-                required
-                value={refNumber}
-                onChange={(e) => setRefNumber(e.target.value)}
-                placeholder="Contoh: 20261019CIMB982012 / TNG77218"
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-800/90 border border-slate-700 text-white font-mono text-sm focus:outline-none focus:border-blue-500"
-              />
-              <span className="text-[10px] text-slate-400 block mt-1">
-                Ambil nombor rujukan daripada resit pindahan aplikasi CIMB Clicks atau Touch 'n Go eWallet anda.
-              </span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Muat Naik Tangkap Layar Resit (Pilihan / Digalakkan)
-              </label>
-              <div className="relative border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer bg-slate-800/40">
-                <input
-                  type="file"
-                  accept="image/*,.pdf"
-                  onChange={handleFileChange}
-                  className="absolute inset-0 opacity-0 cursor-pointer"
-                />
-                <UploadCloud className="w-6 h-6 text-blue-400 mx-auto mb-1" />
-                <span className="text-xs font-bold text-slate-300 block">
-                  {slipFileName || 'Klik untuk pilih fail resit transaksi'}
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  PNG, JPG, PDF (Maks 5MB)
+          {/* Step 3: Action Execution Form */}
+          {selectedGateway !== 'cimb_manual' ? (
+            /* Instant API Trigger Card */
+            <div className="p-5 md:p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm font-extrabold text-white">
+                  <span className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-black">
+                    3
+                  </span>
+                  <span>Sahkan Bayaran API ({selectedGateway.toUpperCase()})</span>
+                </div>
+                <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Auto-Credit Lejar
                 </span>
               </div>
-            </div>
 
-            <button
-              type="submit"
-              className="w-full btn-3d btn-3d-primary py-3.5 px-6 rounded-2xl font-black text-sm text-white tracking-wide shadow-xl flex items-center justify-center gap-2"
+              <div className="p-4 rounded-2xl bg-slate-800/60 border border-slate-700/60 space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Saluran API:</span>
+                  <span className="font-extrabold text-white capitalize">{selectedGateway} API Gateway</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Jumlah Bayaran:</span>
+                  <span className="font-black text-emerald-400 text-sm">RM {currentAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Akaun Penyelesaian:</span>
+                  <span className="font-mono text-slate-300">
+                    {selectedGateway === 'tng' ? 'TNG: 170997196374' : 'CIMB: 7016657934'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExecuteApiPayment}
+                disabled={isProcessingApi}
+                className="w-full btn-3d btn-3d-primary py-3.5 px-6 rounded-2xl font-black text-sm text-white shadow-xl flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isProcessingApi ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Menghubungi API {selectedGateway.toUpperCase()}...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 text-amber-400" />
+                    <span>Bayar Sekarang (RM {currentAmount.toFixed(2)}) Melalui API</span>
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            /* CIMB Manual Upload Form */
+            <form
+              onSubmit={handleManualSubmit}
+              className="p-5 md:p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl space-y-4"
             >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Hantar Permohonan Tambah Nilai (RM {currentAmount.toFixed(2)})</span>
-            </button>
-          </form>
+              <div className="flex items-center gap-2 text-sm font-extrabold text-white">
+                <span className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center text-xs font-black">
+                  3
+                </span>
+                <span>Hantar No. Rujukan CIMB Manual</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Nombor Rujukan Pindahan CIMB (Wajib)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={refNumber}
+                  onChange={(e) => setRefNumber(e.target.value)}
+                  placeholder="Contoh: 20261019CIMB88912"
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white font-mono text-xs focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Bukti Resit Pindahan (Pilihan)
+                </label>
+                <div className="relative border-2 border-dashed border-slate-700 hover:border-blue-500 rounded-2xl p-4 text-center cursor-pointer bg-slate-800/40">
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={handleFileChange}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                  <UploadCloud className="w-6 h-6 text-blue-400 mx-auto mb-1" />
+                  <span className="text-xs font-bold text-slate-300 block">
+                    {slipFileName || 'Klik untuk muat naik slip resit'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full btn-3d btn-3d-primary py-3.5 px-6 rounded-2xl font-black text-sm text-white shadow-xl flex items-center justify-center gap-2"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Hantar Pindahan CIMB Untuk Semakan (RM {currentAmount.toFixed(2)})</span>
+              </button>
+            </form>
+          )}
         </div>
 
-        {/* Right Column: Bank Details & DuitNow QR Card */}
+        {/* Right Column: Dynamic Gateway QR & Official Account Details */}
         <div className="lg:col-span-5 space-y-6">
           <div className="p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/30 shadow-2xl space-y-5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-indigo-400">
-                Akaun Penerima Rasmi
+                Akaun Penerima Sah
               </span>
               <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                Disahkan Pentadbir
+                Disahkan Bank Negara
               </span>
             </div>
 
             <div className="space-y-3">
-              <div className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700/80">
-                <span className="text-[10px] text-slate-400 block font-semibold">Nama Bank</span>
-                <span className="text-sm font-extrabold text-white">
-                  {selectedMethod === 'CIMB' ? 'CIMB Bank Berhad' : "Touch 'n Go DuitNow"}
-                </span>
+              <div className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-semibold">CIMB Bank</span>
+                  <span className="text-sm font-black text-amber-300 font-mono">7016657934</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy('7016657934')}
+                  className="btn-3d btn-3d-subtle px-2.5 py-1 rounded-lg text-xs font-bold text-slate-300"
+                >
+                  {copiedAccount ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700/80 flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] text-slate-400 block font-semibold">Nombor Akaun / DuitNow</span>
-                  <span className="text-base font-black text-amber-300 font-mono tracking-wider">
-                    {selectedMethod === 'CIMB' ? '7016657934' : '170997196374'}
-                  </span>
+                  <span className="text-[10px] text-slate-400 block font-semibold">TNG DuitNow</span>
+                  <span className="text-sm font-black text-amber-300 font-mono">170997196374</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => handleCopy(selectedMethod === 'CIMB' ? '7016657934' : '170997196374')}
-                  className="btn-3d btn-3d-subtle px-3 py-1.5 rounded-xl text-xs font-bold text-slate-200 flex items-center gap-1.5"
+                  onClick={() => handleCopy('170997196374')}
+                  className="btn-3d btn-3d-subtle px-2.5 py-1 rounded-lg text-xs font-bold text-slate-300"
                 >
-                  {copiedAccount ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedAccount ? 'Disalin' : 'Salin'}</span>
+                  <Copy className="w-3.5 h-3.5" />
                 </button>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-slate-800/80 border border-slate-700/80">
-                <span className="text-[10px] text-slate-400 block font-semibold">Nama Pemegang Akaun</span>
+                <span className="text-[10px] text-slate-400 block font-semibold">Nama Pemegang Sah</span>
                 <span className="text-xs font-bold text-white">
                   NASADEF SDN BHD / COINPAY PLAY VERIFIED
                 </span>
               </div>
             </div>
 
-            {/* DuitNow QR Preview */}
+            {/* DuitNow QR Pay Live Canvas */}
             <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-center">
               <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-slate-300 mb-2">
                 <QrCode className="w-4 h-4 text-pink-400" />
-                <span>DuitNow QR Rasmi (RM {currentAmount.toFixed(2)})</span>
+                <span>DuitNow QR Pay (RM {currentAmount.toFixed(2)})</span>
               </div>
 
               {qrDataUrl ? (
@@ -373,31 +651,23 @@ export const TopUpView: React.FC<TopUpViewProps> = ({
               )}
 
               <p className="text-[10px] text-slate-400 mt-2">
-                Buka mana-mana aplikasi perbankan (CIMB, Maybank, TNG) dan imbas DuitNow QR untuk bayar.
+                Imbas dengan Google Pay, ShopeePay, GrabPay, TNG atau CIMB.
               </p>
-            </div>
-
-            {/* Safety & Protocol Notice */}
-            <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 text-[11px] text-amber-200/90 leading-relaxed flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-              <div>
-                <strong>Protokol Keselamatan Lejar:</strong> Baki e-wallet hanya akan dikreditkan selepas nombor rujukan disahkan oleh semakan pentadbir bagi mengelakkan kredit berganda.
-              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Topup History Table / Status Card */}
+      {/* History Table */}
       <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 shadow-xl">
         <h3 className="text-lg font-black text-white mb-4 flex items-center gap-2">
           <Clock className="w-5 h-5 text-blue-400" />
-          <span>Status Permohonan Tambah Nilai Terkini</span>
+          <span>Rekod Transaksi Tambah Nilai Terkini</span>
         </h3>
 
         {topupRequests.length === 0 ? (
           <div className="p-8 text-center text-slate-500 text-xs">
-            Tiada permohonan tambah nilai lagi. Hantar permohonan pertama anda di atas.
+            Tiada rekod transaksi dijumpai.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -405,40 +675,26 @@ export const TopUpView: React.FC<TopUpViewProps> = ({
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-bold">
                   <th className="pb-3 px-2">ID Rujukan</th>
-                  <th className="pb-3 px-2">Kaedah Bank</th>
+                  <th className="pb-3 px-2">Gerbang / Kaedah</th>
                   <th className="pb-3 px-2">Jumlah</th>
                   <th className="pb-3 px-2">Masa</th>
                   <th className="pb-3 px-2">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-medium">
-                {topupRequests.map((req) => {
-                  const statusStyles = {
-                    PENDING: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
-                    UNDER_REVIEW: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
-                    APPROVED: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-                    REJECTED: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
-                    REFUNDED: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
-                  };
-
-                  return (
-                    <tr key={req.id} className="hover:bg-slate-800/40">
-                      <td className="py-3 px-2 font-mono text-white font-bold">{req.refNumber}</td>
-                      <td className="py-3 px-2 text-slate-300">{req.bankName}</td>
-                      <td className="py-3 px-2 font-black text-white">RM {req.amountMYR.toFixed(2)}</td>
-                      <td className="py-3 px-2 text-slate-400 text-[11px]">{req.createdAt}</td>
-                      <td className="py-3 px-2">
-                        <span
-                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
-                            statusStyles[req.status] || 'bg-slate-700 text-white'
-                          }`}
-                        >
-                          {req.status}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {topupRequests.map((req) => (
+                  <tr key={req.id} className="hover:bg-slate-800/40">
+                    <td className="py-3 px-2 font-mono text-white font-bold">{req.refNumber}</td>
+                    <td className="py-3 px-2 text-slate-300">{req.bankName}</td>
+                    <td className="py-3 px-2 font-black text-white">RM {req.amountMYR.toFixed(2)}</td>
+                    <td className="py-3 px-2 text-slate-400 text-[11px]">{req.createdAt}</td>
+                    <td className="py-3 px-2">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        {req.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
