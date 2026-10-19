@@ -1,0 +1,6 @@
+{
+  "name": "CoinPay Play™ — E-Wallet & Gaming Rewards Super App",
+  "description": "Aplikasi e-wallet dan arked ganjaran mini game premium Malaysia dengan lejar selamat, pengurusan tambah nilai CIMB & DuitNow, 30 permainan arked slot, puzzle, 3D Snow-Plow cozy game, dan AI chatbot bantuan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
