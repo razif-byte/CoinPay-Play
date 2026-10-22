@@ -20,9 +20,23 @@ import {
   HelpCircle,
   X,
   Dices,
+  Wallet,
+  ArrowRightLeft,
+  Banknote,
+  CheckCircle2,
 } from 'lucide-react';
+import { CoinWithdrawModal } from '../wallet/CoinWithdrawModal';
 
 interface ArcadeSlotCollectionProps {
+  realWalletCoins?: number;
+  cashBalanceCents?: number;
+  onSyncWalletCoins?: (deltaCoins: number, reason: string) => void;
+  onConvertCoinsToCash?: (
+    coins: number,
+    destination: 'WALLET_CASH' | 'CIMB' | 'TNG',
+    accountDetails?: string
+  ) => void;
+  onConvertCashToCoins?: (cents: number) => void;
   onEarnCoins: (coins: number, gameTitle: string) => void;
   isDark: boolean;
 }
@@ -249,10 +263,19 @@ const PAYLINE_COLORS = [
 ];
 
 export const ArcadeSlotCollection: React.FC<ArcadeSlotCollectionProps> = ({
+  realWalletCoins = 1250000,
+  cashBalanceCents = 15000,
+  onSyncWalletCoins,
+  onConvertCoinsToCash,
+  onConvertCashToCoins,
   onEarnCoins,
   isDark,
 }) => {
   const [selectedTheme, setSelectedTheme] = useState<Mega888Theme>(MEGA888_THEMES[0]);
+  const [walletPlayMode, setWalletPlayMode] = useState<'REAL_COIN' | 'DEMO'>('REAL_COIN');
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
+  const [realLineBet, setRealLineBet] = useState<number>(500); // 500 Coins * 20 lines = 10,000 Coins (RM 0.10)
+  const [demoLineBet, setDemoLineBet] = useState<number>(5);
 
   // 5 Reels x 3 Rows Matrix
   const [grid, setGrid] = useState<string[][]>([
@@ -266,8 +289,8 @@ export const ArcadeSlotCollection: React.FC<ArcadeSlotCollectionProps> = ({
   const [isSpinning, setIsSpinning] = useState(false);
   const [autoSpinCount, setAutoSpinCount] = useState<number>(0);
   const [isTurbo, setIsTurbo] = useState(false);
-  const [betPerLine, setBetPerLine] = useState<number>(1); // In Free Arcade Coins
   const activePaylines = 20;
+  const betPerLine = walletPlayMode === 'REAL_COIN' ? realLineBet : demoLineBet;
   const totalBet = betPerLine * activePaylines;
 
   // Free Spins Feature State (The coveted Mega888 10 Free Spins + 3x Multiplier!)
@@ -329,19 +352,33 @@ export const ArcadeSlotCollection: React.FC<ArcadeSlotCollectionProps> = ({
   // 5x3 SPIN ENGINE WITH PAYLINE EVALUATION
   const executeSpin = (isFreeSpin = false) => {
     if (isSpinning) return;
-    if (!isFreeSpin && arcadeCredit < totalBet) {
-      alert('Kredit arked percuma tidak mencukupi! Tambah kredit percuma di butang +Tambah Percuma.');
-      return;
+
+    if (!isFreeSpin) {
+      if (walletPlayMode === 'REAL_COIN') {
+        const available = realWalletCoins;
+        if (available < totalBet) {
+          alert(
+            `Baki Coin Wallet Sebenar (${available.toLocaleString()} Coin) tidak mencukupi untuk taruhan ${totalBet.toLocaleString()} Coin (RM ${(totalBet / 100000).toFixed(2)}). Sila tambah coin atau tukar ke Mod Latihan.`
+          );
+          setIsWithdrawModalOpen(true);
+          return;
+        }
+        if (onSyncWalletCoins) {
+          onSyncWalletCoins(-totalBet, `Taruhan Slot: ${selectedTheme.name}`);
+        }
+      } else {
+        if (arcadeCredit < totalBet) {
+          alert('Kredit arked percuma tidak mencukupi! Tambah kredit percuma di butang +Tambah Percuma.');
+          return;
+        }
+        setArcadeCredit((c) => c - totalBet);
+      }
     }
 
     sounds.playSlotSpin();
     setIsSpinning(true);
     setWinningLines([]);
     setWinTitle(null);
-
-    if (!isFreeSpin) {
-      setArcadeCredit((c) => c - totalBet);
-    }
 
     // Available symbols pool for selected theme
     const pool = [
@@ -452,10 +489,19 @@ export const ArcadeSlotCollection: React.FC<ArcadeSlotCollectionProps> = ({
         setLastWinAmount(totalWinCoins);
 
         if (totalWinCoins > 0) {
-          setArcadeCredit((c) => c + totalWinCoins);
-          triggerWinTier(totalWinCoins);
+          if (walletPlayMode === 'REAL_COIN') {
+            if (onSyncWalletCoins) {
+              onSyncWalletCoins(totalWinCoins, `Kemenangan Slot: ${selectedTheme.name}`);
+            }
+            triggerWinTier(totalWinCoins);
+            const winRM = (totalWinCoins / 100000).toFixed(2);
+            setWinTitle(`🔥 MENANG +${totalWinCoins.toLocaleString()} COINS (≈ RM ${winRM} TUNAI)! 🔥`);
+          } else {
+            setArcadeCredit((c) => c + totalWinCoins);
+            triggerWinTier(totalWinCoins);
+          }
 
-          // Credit Reward Coins for player's wallet center
+          // Credit Reward Coins for player's wallet center missions
           const walletReward = Math.min(Math.floor(totalWinCoins / 10), 50);
           if (walletReward > 0) {
             onEarnCoins(walletReward, `Mega888: ${selectedTheme.name}`);
@@ -564,15 +610,22 @@ export const ArcadeSlotCollection: React.FC<ArcadeSlotCollectionProps> = ({
       sounds.playCoinChime();
       const newPot = gamblePot * multiplier;
       setGamblePot(newPot);
-      setGambleStatus(`MENANG! Pot sekarang ${newPot} Coins!`);
-      // Update arcade credit difference
+      setGambleStatus(`MENANG! Pot sekarang ${newPot.toLocaleString()} Coins!`);
       const gain = newPot - gamblePot;
-      setArcadeCredit((c) => c + gain);
+      if (walletPlayMode === 'REAL_COIN') {
+        if (onSyncWalletCoins) onSyncWalletCoins(gain, `Gamble Double Win: ${selectedTheme.name}`);
+      } else {
+        setArcadeCredit((c) => c + gain);
+      }
       setLastWinAmount(newPot);
     } else {
       sounds.playClick();
       setGambleStatus('Kalah! Pot hangus.');
-      setArcadeCredit((c) => Math.max(0, c - gamblePot));
+      if (walletPlayMode === 'REAL_COIN') {
+        if (onSyncWalletCoins) onSyncWalletCoins(-gamblePot, `Gamble Lost: ${selectedTheme.name}`);
+      } else {
+        setArcadeCredit((c) => Math.max(0, c - gamblePot));
+      }
       setLastWinAmount(0);
       setGamblePot(0);
       setTimeout(() => {
@@ -587,6 +640,100 @@ export const ArcadeSlotCollection: React.FC<ArcadeSlotCollectionProps> = ({
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto animate-fade-in">
+      {/* Real Coin Wallet & Withdrawal Banner */}
+      <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-950/80 via-slate-900 to-amber-950/80 border-2 border-amber-500/50 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+        {/* Left: Mode Switcher & Real Balance Status */}
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+          {/* Mode Toggle */}
+          <div className="p-1 rounded-2xl bg-black/60 border border-amber-500/30 flex items-center gap-1 w-full sm:w-auto">
+            <button
+              onClick={() => {
+                sounds.playClick();
+                setWalletPlayMode('REAL_COIN');
+              }}
+              className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${
+                walletPlayMode === 'REAL_COIN'
+                  ? 'bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-950 shadow-lg shadow-amber-500/20'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Coins className="w-3.5 h-3.5" />
+              <span>Kredit Sebenar Wallet</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            </button>
+
+            <button
+              onClick={() => {
+                sounds.playClick();
+                setWalletPlayMode('DEMO');
+              }}
+              className={`flex-1 sm:flex-initial px-3.5 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 ${
+                walletPlayMode === 'DEMO'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Dices className="w-3.5 h-3.5" />
+              <span>Mod Latihan (Demo)</span>
+            </button>
+          </div>
+
+          {/* Balance Pill */}
+          <div className="flex items-center gap-2.5 px-4 py-2 rounded-2xl bg-black/50 border border-white/10 w-full sm:w-auto justify-between sm:justify-start">
+            <div>
+              <span className="text-[10px] text-slate-400 block font-bold uppercase">
+                {walletPlayMode === 'REAL_COIN' ? 'Baki Coin Sebenar:' : 'Kredit Demo:'}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <Coins className="w-4 h-4 text-amber-400" />
+                <span className="text-base font-black text-amber-300 tabular-nums">
+                  {walletPlayMode === 'REAL_COIN'
+                    ? realWalletCoins.toLocaleString()
+                    : arcadeCredit.toLocaleString()}
+                </span>
+                <span className="text-[11px] font-bold text-slate-400">COINS</span>
+              </div>
+            </div>
+
+            {walletPlayMode === 'REAL_COIN' && (
+              <div className="border-l border-white/10 pl-2.5 text-right">
+                <span className="text-[10px] text-emerald-400 block font-bold">NILAI TUNAI:</span>
+                <span className="text-xs font-black text-emerald-300 tabular-nums">
+                  ≈ RM {(realWalletCoins / 100000).toFixed(2)}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Cash Out (Withdraw) & Deposit Buttons */}
+        <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+          <button
+            onClick={() => {
+              sounds.playClick();
+              setIsWithdrawModalOpen(true);
+            }}
+            className="flex-1 sm:flex-initial btn-3d btn-3d-gold px-4 py-2.5 rounded-2xl font-black text-xs text-slate-950 flex items-center justify-center gap-2 shadow-lg"
+            title="Tukar Coin ke Duit Sebenar (100,000 Coin = RM 1.00)"
+          >
+            <Banknote className="w-4 h-4 text-slate-950" />
+            <span>Withdraw / Tukar Coin (RM)</span>
+          </button>
+
+          <button
+            onClick={() => {
+              sounds.playClick();
+              setIsWithdrawModalOpen(true);
+            }}
+            className="flex-1 sm:flex-initial btn-3d btn-3d-primary px-3.5 py-2.5 rounded-2xl font-black text-xs text-white flex items-center justify-center gap-1.5 shadow-md"
+            title="Tambah Coin Menggunakan Baki Tunai Wallet"
+          >
+            <Zap className="w-3.5 h-3.5 text-yellow-300" />
+            <span>+ Deposit Coin</span>
+          </button>
+        </div>
+      </div>
+
       {/* Mega888 Regulatory & Arcade Notice */}
       <div className="p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/40 flex items-start gap-3 text-xs text-amber-200">
         <ShieldCheck className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
@@ -594,11 +741,11 @@ export const ArcadeSlotCollection: React.FC<ArcadeSlotCollectionProps> = ({
           <p className="font-extrabold text-white flex items-center gap-1.5 flex-wrap">
             <span>Mega888 Casino Slot Engine — 30 Tema Video Slot Arked</span>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-              100% Kredit Percuma Arked & Ganjaran Sah
+              Kadar Rasmi: 100,000 Coin = RM 1.00 Tunai
             </span>
           </p>
           <p className="opacity-90 leading-relaxed text-[11px]">
-            Diinspirasikan oleh enjin permainan slot kasino Mega888 yang paling popular (Great Blue, Highway Kings, Safari Heat, Dolphin Reef, Panther Moon) lengkap dengan 20 garisan bayaran, WILD 2X, SCATTER 10 Pusingan Percuma (3x Pengganda), Progressive 4-Tier Jackpots, dan Ciri Double/Gamble.
+            Diinspirasikan oleh enjin slot Mega888 (Great Blue, Highway Kings, Safari Heat, Dolphin Reef, Panther Moon) dengan 20 payline tetap, WILD 2X, SCATTER 10 Free Spins (3x), 4-Tier Jackpots, dan penukaran coin segera ke baki tunai / CIMB: 7016657934 / TNG: 170997196374.
           </p>
         </div>
       </div>
@@ -810,10 +957,17 @@ export const ArcadeSlotCollection: React.FC<ArcadeSlotCollectionProps> = ({
           <div className="flex items-center gap-2">
             <span className="text-slate-400">Taruhan Baris:</span>
             <div className="flex items-center gap-1">
-              {[1, 2, 5, 10, 20].map((bet) => (
+              {(walletPlayMode === 'REAL_COIN' ? [250, 500, 1000, 2500, 5000] : [1, 2, 5, 10, 20]).map((bet) => (
                 <button
                   key={bet}
-                  onClick={() => setBetPerLine(bet)}
+                  onClick={() => {
+                    sounds.playClick();
+                    if (walletPlayMode === 'REAL_COIN') {
+                      setRealLineBet(bet);
+                    } else {
+                      setDemoLineBet(bet);
+                    }
+                  }}
                   disabled={isSpinning}
                   className={`px-2.5 py-1 rounded-lg text-xs font-black transition ${
                     betPerLine === bet

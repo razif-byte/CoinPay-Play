@@ -29,7 +29,15 @@ interface TopUpViewProps {
   isDark: boolean;
 }
 
-type PaymentGatewayId = 'googlepay' | 'shopeepay' | 'grabpay' | 'duitnow' | 'tng' | 'cimb_manual';
+type PaymentGatewayId =
+  | 'googlepay'
+  | 'shopeepay'
+  | 'grabpay'
+  | 'duitnow'
+  | 'tng'
+  | 'card'
+  | 'setel'
+  | 'cimb_manual';
 
 export const TopUpView: React.FC<TopUpViewProps> = ({
   topupRequests,
@@ -94,6 +102,8 @@ export const TopUpView: React.FC<TopUpViewProps> = ({
       grabpay: '/api/pay/grabpay',
       duitnow: '/api/pay/duitnow',
       tng: '/api/pay/tng',
+      card: '/api/pay/card',
+      setel: '/api/pay/setel',
     };
 
     const targetEndpoint = endpointMap[selectedGateway];
@@ -448,7 +458,57 @@ export const TopUpView: React.FC<TopUpViewProps> = ({
                 <p className="text-[11px] text-slate-400">Pindahan pantas DuitNow ID rasmi.</p>
               </button>
 
-              {/* 6. CIMB Bank Manual Pindahan */}
+              {/* 6. Kad Debit & Kredit (Visa / Mastercard / MyDebit 3D Secure) */}
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setSelectedGateway('card');
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden group ${
+                  selectedGateway === 'card'
+                    ? 'bg-indigo-950/40 border-indigo-500 shadow-lg shadow-indigo-500/20'
+                    : 'bg-slate-800/40 hover:bg-slate-800 border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-indigo-400" />
+                    <span className="font-bold text-xs text-white">Kad Debit / Kredit</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300">
+                    Visa / MC
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">Bayaran kad pantas dengan pengesahan 3D Secure.</p>
+              </button>
+
+              {/* 7. Petronas Setel & Mesra */}
+              <button
+                type="button"
+                onClick={() => {
+                  sounds.playClick();
+                  setSelectedGateway('setel');
+                }}
+                className={`p-3.5 rounded-2xl border text-left transition-all relative overflow-hidden group ${
+                  selectedGateway === 'setel'
+                    ? 'bg-emerald-950/40 border-emerald-500 shadow-lg shadow-emerald-500/20'
+                    : 'bg-slate-800/40 hover:bg-slate-800 border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">⛽</span>
+                    <span className="font-bold text-xs text-white">Petronas Setel</span>
+                  </div>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                    +Mata Mesra
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">Pautkan Setel & peroleh mata ganjaran Mesra.</p>
+              </button>
+
+              {/* 8. CIMB Bank Manual Pindahan */}
               <button
                 type="button"
                 onClick={() => {

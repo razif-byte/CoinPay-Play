@@ -54,7 +54,15 @@ Beri jawapan dalam Bahasa Melayu yang mesra, sopan, ringkas, berstruktur dan ber
 // In-memory payment transactions log
 interface PaymentRecord {
   id: string;
-  gateway: 'GOOGLE_PAY' | 'SHOPEEPAY' | 'GRABPAY' | 'DUITNOW_QR' | 'TNG_EWALLET' | 'CIMB_TRANSFER';
+  gateway:
+    | 'GOOGLE_PAY'
+    | 'SHOPEEPAY'
+    | 'GRABPAY'
+    | 'DUITNOW_QR'
+    | 'TNG_EWALLET'
+    | 'CIMB_TRANSFER'
+    | 'CARD_PAY'
+    | 'SETEL_PAY';
   amountMYR: number;
   currency: 'MYR';
   refNumber: string;
@@ -308,11 +316,96 @@ app.post('/api/pay/tng', (req, res) => {
       timestamp: record.timestamp,
     });
   } catch (err: any) {
-    return res.status(500).json({ error: 'Ralat Touch n Go API', details: err.message });
+    return res.status(500).json({ error: 'Ralat TNG API', details: err.message });
   }
 });
 
-// 7. Payment Webhook Simulator (Instant IPN)
+// 7. Debit & Credit Card 3D Secure API
+app.post('/api/pay/card', (req, res) => {
+  try {
+    const { amountMYR, cardNumber, cardholderName, cardType = 'DEBIT', userId } = req.body;
+    const amount = parseFloat(amountMYR);
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Jumlah tidak sah.' });
+    }
+
+    const last4 = cardNumber ? String(cardNumber).slice(-4) : '4242';
+    const refNumber = `CARD-${Date.now().toString().slice(-8)}`;
+    const record: PaymentRecord = {
+      id: `CARD_TXN_${Date.now()}`,
+      gateway: 'CARD_PAY',
+      amountMYR: amount,
+      currency: 'MYR',
+      refNumber,
+      status: 'APPROVED',
+      userId: userId || 'usr_current',
+      timestamp: new Date().toLocaleString('ms-MY'),
+      merchantSettlement: 'CIMB: 7016657934 / Visa-Mastercard Gateway',
+      meta: { last4, cardType, cardholderName },
+    };
+    paymentHistory.unshift(record);
+
+    return res.json({
+      success: true,
+      txnId: record.id,
+      refNumber,
+      gateway: `Kad ${cardType === 'CREDIT' ? 'Kredit' : 'Debit'} (•••• ${last4})`,
+      amountMYR: amount,
+      currency: 'MYR',
+      status: 'APPROVED',
+      settlementAccount: 'CIMB Bank: 7016657934',
+      message: 'Pengesahan 3D Secure berjaya! Caj kad telah disahkan.',
+      timestamp: record.timestamp,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Ralat Card Payment Gateway API', details: err.message });
+  }
+});
+
+// 8. Petronas Setel & Mesra Points Payment API
+app.post('/api/pay/setel', (req, res) => {
+  try {
+    const { amountMYR, setelPhone, useMesraPoints, userId } = req.body;
+    const amount = parseFloat(amountMYR);
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: 'Jumlah tidak sah.' });
+    }
+
+    const refNumber = `SETEL-${Date.now().toString().slice(-8)}`;
+    const record: PaymentRecord = {
+      id: `SETEL_TXN_${Date.now()}`,
+      gateway: 'SETEL_PAY',
+      amountMYR: amount,
+      currency: 'MYR',
+      refNumber,
+      status: 'APPROVED',
+      userId: userId || 'usr_current',
+      timestamp: new Date().toLocaleString('ms-MY'),
+      merchantSettlement: 'Petronas Setel Merchant Hub / NASADEF',
+      meta: { setelPhone: setelPhone || '017-0997196', useMesraPoints },
+    };
+    paymentHistory.unshift(record);
+
+    return res.json({
+      success: true,
+      txnId: record.id,
+      refNumber,
+      gateway: 'Petronas Setel & Mesra',
+      amountMYR: amount,
+      currency: 'MYR',
+      status: 'APPROVED',
+      settlementAccount: 'CIMB Bank: 7016657934',
+      message: 'Transaksi Petronas Setel berjaya! 50 Mata Mesra diperoleh.',
+      timestamp: record.timestamp,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Ralat Setel API', details: err.message });
+  }
+});
+
+// 9. Payment Webhook Simulator (Instant IPN)
 app.post('/api/pay/webhook', (req, res) => {
   const { event, txnId, signature } = req.body;
   res.json({

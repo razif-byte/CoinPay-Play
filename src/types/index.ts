@@ -1,4 +1,4 @@
-export type TransactionType = 'TOPUP' | 'TRANSFER' | 'GAME_REWARD' | 'VOUCHER_REDEMPTION' | 'SCAN_PAY' | 'ADMIN_ADJUSTMENT';
+export type TransactionType = 'TOPUP' | 'TRANSFER' | 'GAME_REWARD' | 'VOUCHER_REDEMPTION' | 'SCAN_PAY' | 'ADMIN_ADJUSTMENT' | 'COIN_WITHDRAW' | 'COIN_DEPOSIT';
 
 export type TransactionStatus = 'PENDING' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED' | 'REFUNDED';
 
